@@ -1,67 +1,103 @@
-import sqlite3
-import pandas as pd
-from pathlib import Path
-import tempfile
-import shutil
 import os
+import sqlite3
+from pathlib import Path
+import re
 
+class ForensicImage:
+    def __init__(self):
+       self.path = self.get_mnt_pnt()
+       self.os_type = self.detect_os()
+       self.users_dir = self.detect_users_dir()
+       self.home_dirs = self.detect_home_dirs()
+       self.user_list = self.list_users()
+       self.browser_dirs = self.get_browser_dirs()
+    
+    def get_mnt_pnt(self) -> str:
+        while True:
+            mnt_pnt = input('Enter mount point of forensic image: ')
+            if re.match(r"^\/.+\/$", mnt_pnt) or re.match(r"^[a-zA-Z]{1}\:\.+\$", mnt_pnt):
+                return mnt_pnt
+            else:
+                print(f'Incorrect format. Try: eg. /mount/point/ or D:\mount\point\\')
+                continue
 
-def find_home_dir(image_mnt_pnt):
-    possible_home_dirs = [Path(f"{image_mnt_pnt}home"), Path(f"{image_mnt_pnt}@home")]
-    for dir in possible_home_dirs:
-        if dir.exists():
-            return dir
+    def detect_os(self) -> str:
+        if os.path.exists(f'{self.path}@home/') or os.path.exists(f'{self.path}home/'):
+            return('Linux')
+        elif os.path.exists(f'{self.path}Windows/'):
+            return('Windows')
+        elif os.path.exists(f'{self.path}System/Library/'):
+            return('MacOS')
+    
+    def detect_users_dir(self):
+        if self.os_type == 'Linux' and os.path.exists(f'{self.path}@home/'):
+            return Path(f'{self.path}@home/')
+        elif self.os_type == 'Linux' and os.path.exists(f'{self.path}home/'):
+            return Path(f'{self.path}home/')
+        elif self.os_type == 'Windows':
+            return Path(f'{self.path}Windows/')
+        elif self.os_type == 'MacOS':
+            return Path(f'{self.path}System/Library/')
 
-def find_ff_db_dirs(home_dir):
-    home_dir = Path(home_dir)
-    ff_db_dirs = []
-    for user_dir in home_dir.iterdir():
-        if not user_dir.is_dir():
-            continue
-        ff_dir = user_dir / ".mozilla/firefox"
-        if not ff_dir.exists():
-            continue
-        ff_db_dirs.extend([str(p) for p in ff_dir.iterdir() if p.is_dir() and ".default-" in p.name])
-        return ff_db_dirs
+    def detect_home_dirs(self) -> list[str]:
+       user_list = []
+       user_list.extend([str(u) for u in self.users_dir.iterdir() if u.is_dir()])
+       return user_list
 
-def extract_history(temp_dir):
-    QUERY = '''SELECT 
+    def list_users(self) -> list[str]:
+        users = []
+        users.extend([str(u.parts[-1]) for u in self.users_dir.iterdir() if u.is_dir()])
+        return users
+
+    def get_browser_dirs(self) -> dict[any]:
+        browser_dirs =  {}
+        for user in self.user_list:
+            if self.os_type == 'Linux':
+                browser_dirs[user] = {
+                    "firefox": os.path.join(self.users_dir, user, ".mozilla", "firefox"),
+                    "chrome": os.path.join(self.users_dir, user, ".config", "google-chrome", "Default") 
+                }
+            elif self.os_type == 'Windows':
+                browser_dirs[user] = {
+                    "firefox": os.path.join(self.users_dir, user, "AppData", "Roaming", "Mozilla", "Firefox", "Profiles"),
+                    "chrome": os.path.join(self.users_dir, user, "AppData", "Local", "Google", "Chrome", "User Data", "Default")
+                }
+            elif self.os_type == 'MacOS':
+                browser_dirs[user] = {
+                    "firefox": os.path.join(self.users_dir, user, "Library", "Application Support", "Firefox", "Profiles"),
+                    "chrome": os.path.join(self.users_dir, user, "Library", "Application Support", "Google", "Chrome", "Default")
+                }
+        return browser_dirs
+               
+        
+        
+
+def extract_history(db_dir: str) -> list[any]:
+    #this function works to query db without copying to temp dir
+    QUERY = '''
+                SELECT 
                 moz_places.url AS url,
                 moz_historyvisits.visit_date AS time
                 FROM moz_places
                 INNER JOIN moz_historyvisits
                 ON moz_historyvisits.place_id == moz_places.id
-                ORDER BY time DESC;'''
+                ORDER BY time DESC;
+            '''
 
-    new_db_file = os.path.join(temp_dir, 'places.sqlite')
-    con = sqlite3.connect(new_db_file)
-    df = pd.read_sql_query(QUERY, con)
-    df.to_csv('./test.csv', index=False, header=True)
+    db_file = os.path.join(db_dir, "places.sqlite")
+    con = sqlite3.connect(f"file:{db_file}?mode=ro&immutable=1", uri=True)
+    cur = con.cursor()
+    results = cur.execute(QUERY).fetchall()
     con.close()
+    return results
 
-def copy_ff_dir(ff_db_dirs, temp_dir):
-    for dir in ff_db_dirs:
-        try:
-            shutil.copytree(dir, temp_dir, dirs_exist_ok=True)
-        except Exception as e:
-            print(f"Error during copy: {e}")
+#print(extract_history('/mnt/forensics/@home/user/.mozilla/firefox/i1n33utz.default-esr/'))
+image = ForensicImage()
+print(image.os_type)
+print(image.users_dir)
+print(image.user_list)
+print(image.browser_dirs)
 
-def main():
-
-    temp_dir = tempfile.mkdtemp()
-    image_mnt_pnt = input('Enter mount point of forensic image: ')
-    home_dir = find_home_dir(image_mnt_pnt)
-
-    try:
-        ff_db_dirs = find_ff_db_dirs(home_dir)
-        copy_ff_dir(ff_db_dirs, temp_dir)
-        extract_history(temp_dir) 
-    finally:
-        shutil.rmtree(temp_dir)
-
-
-if __name__ == '__main__':
-    main()
 
 
 

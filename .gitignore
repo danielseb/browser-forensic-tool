@@ -1,2 +1,4 @@
 venv/
 .mozilla/
+test.py
+old.py
