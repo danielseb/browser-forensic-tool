@@ -10,7 +10,7 @@ class ForensicImage:
        self.users_dir = self.detect_users_dir()
        self.home_dirs = self.detect_home_dirs()
        self.user_list = self.list_users()
-       self.browser_dirs = self.get_browser_dirs()
+       self.db_dirs = self.get_db_dirs()
     
     def get_mnt_pnt(self) -> str:
         while True:
@@ -48,29 +48,34 @@ class ForensicImage:
         users = []
         users.extend([str(u.parts[-1]) for u in self.users_dir.iterdir() if u.is_dir()])
         return users
+    
+    def get_db_dirs(self) -> dict[any]:
+        db_dirs = {}
+        rel_paths = {
+            "Linux":{
+                "firefox": ".mozilla/firefox",
+                "chrome": ".config/google-chrome/Default"
+            },
+            "Windows":{
+                "firefox": f"AppData\\Roaming\\Mozilla\\Firefox\\Profiles",
+                "chrome": f"AppData\\Local\\Google\\Chrome\\User Data\\Default"
+            },
+            "MacOS":{
+                "firefox": "Library/Application Support/Firefox/Profiles",
+                "chrome": "Library/Application Support/Google/Chrome/Default"
+            }
+        }
 
-    def get_browser_dirs(self) -> dict[any]:
-        browser_dirs =  {}
         for user in self.user_list:
-            if self.os_type == 'Linux':
-                browser_dirs[user] = {
-                    "firefox": os.path.join(self.users_dir, user, ".mozilla", "firefox"),
-                    "chrome": os.path.join(self.users_dir, user, ".config", "google-chrome", "Default") 
-                }
-            elif self.os_type == 'Windows':
-                browser_dirs[user] = {
-                    "firefox": os.path.join(self.users_dir, user, "AppData", "Roaming", "Mozilla", "Firefox", "Profiles"),
-                    "chrome": os.path.join(self.users_dir, user, "AppData", "Local", "Google", "Chrome", "User Data", "Default")
-                }
-            elif self.os_type == 'MacOS':
-                browser_dirs[user] = {
-                    "firefox": os.path.join(self.users_dir, user, "Library", "Application Support", "Firefox", "Profiles"),
-                    "chrome": os.path.join(self.users_dir, user, "Library", "Application Support", "Google", "Chrome", "Default")
-                }
-        return browser_dirs
-               
+            ff_db_dir = os.path.join(self.users_dir, user, rel_paths[self.os_type]["firefox"])
+            ch_db_dir = os.path.join(self.users_dir, user, rel_paths[self.os_type]["chrome"])
+            db_dirs[user] = {
+                "firefox": ff_db_dir if os.path.exists(ff_db_dir) else None,
+                "chrome": ch_db_dir if os.path.exists(ch_db_dir) else None
+            }
         
-        
+        return db_dirs
+
 
 def extract_history(db_dir: str) -> list[any]:
     #this function works to query db without copying to temp dir
@@ -96,7 +101,7 @@ image = ForensicImage()
 print(image.os_type)
 print(image.users_dir)
 print(image.user_list)
-print(image.browser_dirs)
+print(image.db_dirs)
 
 
 
