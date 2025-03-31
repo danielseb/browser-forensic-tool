@@ -2,6 +2,7 @@ import os
 import sqlite3
 from pathlib import Path
 import re
+import glob
 
 class ForensicImage:
     def __init__(self):
@@ -29,7 +30,7 @@ class ForensicImage:
         elif os.path.exists(f'{self.path}System/Library/'):
             return('MacOS')
     
-    def detect_users_dir(self):
+    def detect_users_dir(self) -> Path:
         if self.os_type == 'Linux' and os.path.exists(f'{self.path}@home/'):
             return Path(f'{self.path}@home/')
         elif self.os_type == 'Linux' and os.path.exists(f'{self.path}home/'):
@@ -53,29 +54,33 @@ class ForensicImage:
         db_dirs = {}
         rel_paths = {
             "Linux":{
-                "firefox": ".mozilla/firefox",
-                "chrome": ".config/google-chrome/Default"
+                "firefox": ".mozilla/firefox/",
+                "chrome": ".config/google-chrome/Default/"
             },
             "Windows":{
-                "firefox": f"AppData\\Roaming\\Mozilla\\Firefox\\Profiles",
-                "chrome": f"AppData\\Local\\Google\\Chrome\\User Data\\Default"
+                "firefox": f"AppData\\Roaming\\Mozilla\\Firefox\\Profiles\\",
+                "chrome": f"AppData\\Local\\Google\\Chrome\\User Data\\Default\\"
             },
             "MacOS":{
-                "firefox": "Library/Application Support/Firefox/Profiles",
-                "chrome": "Library/Application Support/Google/Chrome/Default"
+                "firefox": "Library/Application Support/Firefox/Profiles/",
+                "chrome": "Library/Application Support/Google/Chrome/Default/"
             }
         }
 
         for user in self.user_list:
             ff_db_dir = os.path.join(self.users_dir, user, rel_paths[self.os_type]["firefox"])
             ch_db_dir = os.path.join(self.users_dir, user, rel_paths[self.os_type]["chrome"])
+            ff_profile = glob.glob(ff_db_dir + '*.default-*')
             db_dirs[user] = {
-                "firefox": ff_db_dir if os.path.exists(ff_db_dir) else None,
+                "firefox": ff_profile[0] if os.path.exists(ff_profile[0]) else None,
                 "chrome": ch_db_dir if os.path.exists(ch_db_dir) else None
             }
         
         return db_dirs
 
+class QueryManager:
+    def __init__(self):
+        pass
 
 def extract_history(db_dir: str) -> list[any]:
     #this function works to query db without copying to temp dir
